@@ -101,7 +101,8 @@ func Unmarshal(es EnvSet, v interface{}) error {
 			break
 		}
 		if !found {
-			if valueField.Type().Kind() == reflect.Ptr {
+			valueTypeKind := valueField.Type().Kind()
+			if valueTypeKind == reflect.Ptr || valueTypeKind == reflect.Slice || valueTypeKind == reflect.Map {
 				// Default value for pointers only works if the pointer is nil
 				if !valueField.IsNil() {
 					continue
