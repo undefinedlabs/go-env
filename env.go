@@ -85,6 +85,7 @@ func Unmarshal(es EnvSet, v interface{}) error {
 			return ErrUnexportedField
 		}
 
+		found := false
 		for _, tag := range tagValues {
 			envVar, ok := es[tag]
 			if !ok {
@@ -96,7 +97,18 @@ func Unmarshal(es EnvSet, v interface{}) error {
 				return err
 			}
 			delete(es, tag)
+			found = true
 			break
+		}
+		if !found {
+			defaultValue := typeField.Tag.Get("default")
+			if defaultValue == "" {
+				continue
+			}
+			err := set(es, typeField.Type, valueField, defaultValue)
+			if err != nil {
+				return err
+			}
 		}
 	}
 

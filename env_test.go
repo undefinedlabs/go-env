@@ -21,7 +21,7 @@ import (
 
 type ValidStruct struct {
 	// Home should match Environ because it has a "env" field tag.
-	Home string `env:"HOME"`
+	Home string `env:"HOME" default:"myHome"`
 
 	PExpand string `env:"PEXPAND"`
 
@@ -57,8 +57,10 @@ type ValidStruct struct {
 	// Slice of bools
 	SliceBool []bool `env:"SLICEBOOL"`
 
+	// String map
 	MapString map[string]string `env:"MAPSTRING"`
 
+	// String interface map
 	MapIFace map[string]interface{} `env:"MAPIFACE"`
 
 	// Additional supported types
@@ -124,6 +126,26 @@ func TestUnmarshal(t *testing.T) {
 		t.Errorf("Expected field value to be '%s' but got '%s'", "/var/bin:/home/test", validStruct.PExpand)
 	}
 
+	if len(validStruct.SliceTest) != 3 {
+		t.Errorf("Expected field length to be '%d' but got '%d'", 3, len(validStruct.SliceTest))
+	}
+
+	if len(validStruct.SliceNumber) != 3 {
+		t.Errorf("Expected field length to be '%d' but got '%d'", 3, len(validStruct.SliceNumber))
+	}
+
+	if len(validStruct.SliceBool) != 3 {
+		t.Errorf("Expected field length to be '%d' but got '%d'", 3, len(validStruct.SliceBool))
+	}
+
+	if len(validStruct.MapString) != 3 {
+		t.Errorf("Expected field length to be '%d' but got '%d'", 3, len(validStruct.MapString))
+	}
+
+	if len(validStruct.MapIFace) != 3 {
+		t.Errorf("Expected field length to be '%d' but got '%d'", 3, len(validStruct.MapIFace))
+	}
+
 	v, ok := environ["HOME"]
 	if ok {
 		t.Errorf("Expected field '%s' to not exist but got '%s'", "HOME", v)
@@ -148,6 +170,10 @@ func TestUnmarshalPointer(t *testing.T) {
 	err := Unmarshal(environ, &validStruct)
 	if err != nil {
 		t.Errorf("Expected no error but got '%s'", err)
+	}
+
+	if validStruct.Home != "myHome" {
+		t.Errorf("Expected field value to be '%s' but got '%s'", "myHome", validStruct.Home)
 	}
 
 	if validStruct.PointerString == nil {
