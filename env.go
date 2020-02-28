@@ -101,6 +101,12 @@ func Unmarshal(es EnvSet, v interface{}) error {
 			break
 		}
 		if !found {
+			if valueField.Type().Kind() == reflect.Ptr {
+				// Default value for pointers only works if the pointer is nil
+				if !valueField.IsNil() {
+					continue
+				}
+			}
 			defaultValue := typeField.Tag.Get("default")
 			if defaultValue == "" {
 				continue
@@ -219,7 +225,6 @@ func getValue(es EnvSet, t reflect.Type, value string) (reflect.Value, error) {
 	default:
 		return reflect.ValueOf(value), nil
 	}
-	return reflect.Value{}, errors.New("invalid type")
 }
 
 // UnmarshalFromEnviron parses an EnvSet from os.Environ and stores the result
