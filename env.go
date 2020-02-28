@@ -91,8 +91,7 @@ func Unmarshal(es EnvSet, v interface{}) error {
 				continue
 			}
 
-			envVar = os.Expand(envVar, func(s string) string { return es[s] })
-			err := set(typeField.Type, valueField, envVar)
+			err := set(es, typeField.Type, valueField, envVar)
 			if err != nil {
 				return err
 			}
@@ -116,34 +115,99 @@ func getTagValues(field reflect.StructField, key string) []string {
 	return val
 }
 
-func set(t reflect.Type, f reflect.Value, value string) error {
+func set(es EnvSet, t reflect.Type, f reflect.Value, value string) error {
 	switch t.Kind() {
 	case reflect.Ptr:
 		ptr := reflect.New(t.Elem())
-		err := set(t.Elem(), ptr.Elem(), value)
+		err := set(es, t.Elem(), ptr.Elem(), value)
 		if err != nil {
 			return err
 		}
 		f.Set(ptr)
 	case reflect.String:
+		value = os.Expand(value, func(s string) string { return es[s] })
 		f.SetString(value)
 	case reflect.Bool:
+		value = os.Expand(value, func(s string) string { return es[s] })
 		v, err := strconv.ParseBool(value)
 		if err != nil {
 			return err
 		}
 		f.SetBool(v)
 	case reflect.Int:
+		value = os.Expand(value, func(s string) string { return es[s] })
 		v, err := strconv.Atoi(value)
 		if err != nil {
 			return err
 		}
 		f.SetInt(int64(v))
+	case reflect.Slice:
+		val := strings.Split(value, ",")
+		nSlice := reflect.MakeSlice(t, 0, len(val))
+		for i := range val {
+			val[i] = strings.TrimSpace(val[i])
+			val[i] = os.Expand(val[i], func(s string) string { return es[s] })
+			rVal, err := getValue(es, t.Elem(), val[i])
+			if err != nil {
+				return err
+			}
+			nSlice = reflect.Append(nSlice, rVal)
+		}
+		f.Set(nSlice)
+	case reflect.Map:
+		val := strings.Split(value, ",")
+		nMap := reflect.MakeMap(t)
+		for i := range val {
+			val[i] = strings.TrimSpace(val[i])
+			itemArr := strings.Split(val[i], "=")
+			if len(itemArr) == 2 {
+				kValue, err := getValue(es, t.Key(), itemArr[0])
+				if err != nil {
+					continue
+				}
+				itemArr[1] = os.Expand(itemArr[1], func(s string) string { return es[s] })
+				vValue, err := getValue(es, t.Elem(), os.ExpandEnv(itemArr[1]))
+				if err != nil {
+					continue
+				}
+				nMap.SetMapIndex(kValue, vValue)
+			}
+		}
+		f.Set(nMap)
 	default:
 		return ErrUnsupportedType
 	}
 
 	return nil
+}
+
+func getValue(es EnvSet, t reflect.Type, value string) (reflect.Value, error) {
+	switch t.Kind() {
+	case reflect.Ptr:
+		ptr := reflect.New(t.Elem())
+		err := set(es, t.Elem(), ptr.Elem(), value)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		return ptr, nil
+	case reflect.String:
+		return reflect.ValueOf(value), nil
+	case reflect.Bool:
+		v, err := strconv.ParseBool(value)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		return reflect.ValueOf(v), nil
+	case reflect.Int:
+		v, err := strconv.Atoi(value)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		return reflect.ValueOf(v), nil
+	default:
+		return reflect.ValueOf(value), nil
+	}
+	return reflect.Value{}, errors.New("invalid type")
 }
 
 // UnmarshalFromEnviron parses an EnvSet from os.Environ and stores the result

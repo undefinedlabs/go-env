@@ -48,6 +48,19 @@ type ValidStruct struct {
 	// Extra should remain with a zero-value because it has no "env" field tag.
 	Extra string
 
+	// Slice of strings
+	SliceTest []string `env:"SLICE"`
+
+	// Slice of ints
+	SliceNumber []int `env:"SLICENUMBER"`
+
+	// Slice of bools
+	SliceBool []bool `env:"SLICEBOOL"`
+
+	MapString map[string]string `env:"MAPSTRING"`
+
+	MapIFace map[string]interface{} `env:"MAPIFACE"`
+
 	// Additional supported types
 	Int  int  `env:"INT"`
 	Bool bool `env:"BOOL"`
@@ -63,13 +76,18 @@ type UnexportedStruct struct {
 
 func TestUnmarshal(t *testing.T) {
 	environ := map[string]string{
-		"HOME":      "/home/test",
-		"WORKSPACE": "/mnt/builds/slave/workspace/test",
-		"EXTRA":     "extra",
-		"INT":       "1",
-		"BOOL":      "true",
-		"PEXPAND":   "$PATH:/home/test",
-		"PATH":      "/var/bin",
+		"HOME":        "/home/test",
+		"WORKSPACE":   "/mnt/builds/slave/workspace/test",
+		"EXTRA":       "extra",
+		"INT":         "1",
+		"BOOL":        "true",
+		"PEXPAND":     "$PATH:/home/test",
+		"PATH":        "/var/bin",
+		"SLICE":       "A, B, C",
+		"SLICENUMBER": "1,2,3",
+		"SLICEBOOL":   "true, false, true",
+		"MAPSTRING":   "k1=$PATH, k2=v2, k3=v3",
+		"MAPIFACE":    "k1=v1, k2=v2, k3=$PATH",
 	}
 
 	var validStruct ValidStruct
