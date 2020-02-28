@@ -22,6 +22,7 @@ import (
 	"os"
 	"reflect"
 	"strconv"
+	"strings"
 )
 
 var (
@@ -75,8 +76,8 @@ func Unmarshal(es EnvSet, v interface{}) error {
 		}
 
 		typeField := t.Field(i)
-		tag := typeField.Tag.Get("env")
-		if tag == "" {
+		tagValues := getTagValues(typeField, "env")
+		if tagValues == nil || len(tagValues) == 0 {
 			continue
 		}
 
@@ -84,49 +85,141 @@ func Unmarshal(es EnvSet, v interface{}) error {
 			return ErrUnexportedField
 		}
 
-		envVar, ok := es[tag]
-		if !ok {
-			continue
-		}
+		found := false
+		for _, tag := range tagValues {
+			envVar, ok := es[tag]
+			if !ok {
+				continue
+			}
 
-		err := set(typeField.Type, valueField, envVar)
-		if err != nil {
-			return err
+			err := set(es, typeField.Type, valueField, envVar)
+			if err != nil {
+				return err
+			}
+			delete(es, tag)
+			found = true
+			break
 		}
-		delete(es, tag)
+		if !found {
+			defaultValue := typeField.Tag.Get("default")
+			if defaultValue == "" {
+				continue
+			}
+			err := set(es, typeField.Type, valueField, defaultValue)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
 }
 
-func set(t reflect.Type, f reflect.Value, value string) error {
+func getTagValues(field reflect.StructField, key string) []string {
+	tagValue := field.Tag.Get(key)
+	if tagValue == "" {
+		return nil
+	}
+	val := strings.Split(tagValue, ",")
+	for i := range val {
+		val[i] = strings.TrimSpace(val[i])
+	}
+	return val
+}
+
+func set(es EnvSet, t reflect.Type, f reflect.Value, value string) error {
 	switch t.Kind() {
 	case reflect.Ptr:
 		ptr := reflect.New(t.Elem())
-		err := set(t.Elem(), ptr.Elem(), value)
+		err := set(es, t.Elem(), ptr.Elem(), value)
 		if err != nil {
 			return err
 		}
 		f.Set(ptr)
 	case reflect.String:
+		value = os.Expand(value, func(s string) string { return es[s] })
 		f.SetString(value)
 	case reflect.Bool:
+		value = os.Expand(value, func(s string) string { return es[s] })
 		v, err := strconv.ParseBool(value)
 		if err != nil {
 			return err
 		}
 		f.SetBool(v)
 	case reflect.Int:
+		value = os.Expand(value, func(s string) string { return es[s] })
 		v, err := strconv.Atoi(value)
 		if err != nil {
 			return err
 		}
 		f.SetInt(int64(v))
+	case reflect.Slice:
+		val := strings.Split(value, ",")
+		nSlice := reflect.MakeSlice(t, 0, len(val))
+		for i := range val {
+			val[i] = strings.TrimSpace(val[i])
+			val[i] = os.Expand(val[i], func(s string) string { return es[s] })
+			rVal, err := getValue(es, t.Elem(), val[i])
+			if err != nil {
+				return err
+			}
+			nSlice = reflect.Append(nSlice, rVal)
+		}
+		f.Set(nSlice)
+	case reflect.Map:
+		val := strings.Split(value, ",")
+		nMap := reflect.MakeMap(t)
+		for i := range val {
+			val[i] = strings.TrimSpace(val[i])
+			itemArr := strings.Split(val[i], "=")
+			if len(itemArr) == 2 {
+				kValue, err := getValue(es, t.Key(), itemArr[0])
+				if err != nil {
+					continue
+				}
+				itemArr[1] = os.Expand(itemArr[1], func(s string) string { return es[s] })
+				vValue, err := getValue(es, t.Elem(), os.ExpandEnv(itemArr[1]))
+				if err != nil {
+					continue
+				}
+				nMap.SetMapIndex(kValue, vValue)
+			}
+		}
+		f.Set(nMap)
 	default:
 		return ErrUnsupportedType
 	}
 
 	return nil
+}
+
+func getValue(es EnvSet, t reflect.Type, value string) (reflect.Value, error) {
+	switch t.Kind() {
+	case reflect.Ptr:
+		ptr := reflect.New(t.Elem())
+		err := set(es, t.Elem(), ptr.Elem(), value)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		return ptr, nil
+	case reflect.String:
+		return reflect.ValueOf(value), nil
+	case reflect.Bool:
+		v, err := strconv.ParseBool(value)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		return reflect.ValueOf(v), nil
+	case reflect.Int:
+		v, err := strconv.Atoi(value)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		return reflect.ValueOf(v), nil
+	default:
+		return reflect.ValueOf(value), nil
+	}
+	return reflect.Value{}, errors.New("invalid type")
 }
 
 // UnmarshalFromEnviron parses an EnvSet from os.Environ and stores the result
@@ -189,17 +282,45 @@ func Marshal(v interface{}) (EnvSet, error) {
 		}
 
 		typeField := t.Field(i)
-		tag := typeField.Tag.Get("env")
-		if tag == "" {
+		tagValues := getTagValues(typeField, "env")
+		if tagValues == nil || len(tagValues) == 0 {
 			continue
 		}
+		tag := tagValues[0]
 
 		if typeField.Type.Kind() == reflect.Ptr {
-			if valueField.IsNil() {
+			for {
+				if valueField.IsNil() {
+					break
+				}
+				valueField = valueField.Elem()
+				if valueField.Type().Kind() != reflect.Ptr {
+					break
+				}
+			}
+			if valueField.Type().Kind() == reflect.Ptr && valueField.IsNil() {
 				continue
 			}
-			es[tag] = fmt.Sprintf("%v", valueField.Elem().Interface())
-		} else {
+		}
+
+		switch valueField.Type().Kind() {
+		case reflect.Slice:
+			var strSlice []string
+			for i := 0; i < valueField.Len(); i++ {
+				item := valueField.Index(i)
+				strSlice = append(strSlice, fmt.Sprintf("%v", item.Interface()))
+			}
+			es[tag] = strings.Join(strSlice, ", ")
+		case reflect.Map:
+			var strSlice []string
+			iter := valueField.MapRange()
+			for iter.Next() {
+				k := iter.Key()
+				v := iter.Value()
+				strSlice = append(strSlice, fmt.Sprintf("%v=%v", k.Interface(), v.Interface()))
+			}
+			es[tag] = strings.Join(strSlice, ", ")
+		default:
 			es[tag] = fmt.Sprintf("%v", valueField.Interface())
 		}
 	}

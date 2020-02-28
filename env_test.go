@@ -21,7 +21,9 @@ import (
 
 type ValidStruct struct {
 	// Home should match Environ because it has a "env" field tag.
-	Home string `env:"HOME"`
+	Home string `env:"HOME" default:"myHome"`
+
+	PExpand string `env:"PEXPAND"`
 
 	// Jenkins should be recursed into.
 	Jenkins struct {
@@ -32,7 +34,7 @@ type ValidStruct struct {
 	}
 
 	// PointerString should be nil if unset, with "" being a valid value.
-	PointerString *string `env:"POINTER_STRING"`
+	PointerString *string `env:"POINTER_STRING, POINTER_STRING2"`
 
 	// PointerInt should work along with other supported types.
 	PointerInt *int `env:"POINTER_INT"`
@@ -45,6 +47,21 @@ type ValidStruct struct {
 
 	// Extra should remain with a zero-value because it has no "env" field tag.
 	Extra string
+
+	// Slice of strings
+	SliceTest []string `env:"SLICE"`
+
+	// Slice of ints
+	SliceNumber []int `env:"SLICENUMBER"`
+
+	// Slice of bools
+	SliceBool []bool `env:"SLICEBOOL"`
+
+	// String map
+	MapString map[string]string `env:"MAPSTRING"`
+
+	// String interface map
+	MapIFace map[string]interface{} `env:"MAPIFACE"`
 
 	// Additional supported types
 	Int  int  `env:"INT"`
@@ -61,11 +78,18 @@ type UnexportedStruct struct {
 
 func TestUnmarshal(t *testing.T) {
 	environ := map[string]string{
-		"HOME":      "/home/test",
-		"WORKSPACE": "/mnt/builds/slave/workspace/test",
-		"EXTRA":     "extra",
-		"INT":       "1",
-		"BOOL":      "true",
+		"HOME":        "/home/test",
+		"WORKSPACE":   "/mnt/builds/slave/workspace/test",
+		"EXTRA":       "extra",
+		"INT":         "1",
+		"BOOL":        "true",
+		"PEXPAND":     "$PATH:/home/test",
+		"PATH":        "/var/bin",
+		"SLICE":       "A, B, C",
+		"SLICENUMBER": "1,2,3",
+		"SLICEBOOL":   "true, false, true",
+		"MAPSTRING":   "k1=$PATH, k2=v2, k3=v3",
+		"MAPIFACE":    "k1=v1, k2=v2, k3=$PATH",
 	}
 
 	var validStruct ValidStruct
@@ -98,6 +122,30 @@ func TestUnmarshal(t *testing.T) {
 		t.Errorf("Expected field value to be '%t' but got '%t'", true, validStruct.Bool)
 	}
 
+	if validStruct.PExpand != "/var/bin:/home/test" {
+		t.Errorf("Expected field value to be '%s' but got '%s'", "/var/bin:/home/test", validStruct.PExpand)
+	}
+
+	if len(validStruct.SliceTest) != 3 {
+		t.Errorf("Expected field length to be '%d' but got '%d'", 3, len(validStruct.SliceTest))
+	}
+
+	if len(validStruct.SliceNumber) != 3 {
+		t.Errorf("Expected field length to be '%d' but got '%d'", 3, len(validStruct.SliceNumber))
+	}
+
+	if len(validStruct.SliceBool) != 3 {
+		t.Errorf("Expected field length to be '%d' but got '%d'", 3, len(validStruct.SliceBool))
+	}
+
+	if len(validStruct.MapString) != 3 {
+		t.Errorf("Expected field length to be '%d' but got '%d'", 3, len(validStruct.MapString))
+	}
+
+	if len(validStruct.MapIFace) != 3 {
+		t.Errorf("Expected field length to be '%d' but got '%d'", 3, len(validStruct.MapIFace))
+	}
+
 	v, ok := environ["HOME"]
 	if ok {
 		t.Errorf("Expected field '%s' to not exist but got '%s'", "HOME", v)
@@ -113,7 +161,7 @@ func TestUnmarshal(t *testing.T) {
 
 func TestUnmarshalPointer(t *testing.T) {
 	environ := map[string]string{
-		"POINTER_STRING":         "",
+		"POINTER_STRING2":        "",
 		"POINTER_INT":            "1",
 		"POINTER_POINTER_STRING": "",
 	}
@@ -122,6 +170,10 @@ func TestUnmarshalPointer(t *testing.T) {
 	err := Unmarshal(environ, &validStruct)
 	if err != nil {
 		t.Errorf("Expected no error but got '%s'", err)
+	}
+
+	if validStruct.Home != "myHome" {
+		t.Errorf("Expected field value to be '%s' but got '%s'", "myHome", validStruct.Home)
 	}
 
 	if validStruct.PointerString == nil {
@@ -275,6 +327,19 @@ func TestMarshalPointer(t *testing.T) {
 	empty := ""
 	validStruct := ValidStruct{
 		PointerString: &empty,
+		SliceTest:     []string{"A", "B", "C"},
+		SliceNumber:   []int{1, 2, 3},
+		SliceBool:     []bool{true, false, true},
+		MapString: map[string]string{
+			"k1": "v1",
+			"k2": "v2",
+			"k3": "v3",
+		},
+		MapIFace: map[string]interface{}{
+			"k1": 1,
+			"k2": 2,
+			"k3": 3,
+		},
 	}
 	es, err := Marshal(&validStruct)
 	if err != nil {
