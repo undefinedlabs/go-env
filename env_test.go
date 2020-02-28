@@ -23,6 +23,8 @@ type ValidStruct struct {
 	// Home should match Environ because it has a "env" field tag.
 	Home string `env:"HOME"`
 
+	PExpand string `env:"PEXPAND"`
+
 	// Jenkins should be recursed into.
 	Jenkins struct {
 		Workspace string `env:"WORKSPACE"`
@@ -32,7 +34,7 @@ type ValidStruct struct {
 	}
 
 	// PointerString should be nil if unset, with "" being a valid value.
-	PointerString *string `env:"POINTER_STRING"`
+	PointerString *string `env:"POINTER_STRING, POINTER_STRING2"`
 
 	// PointerInt should work along with other supported types.
 	PointerInt *int `env:"POINTER_INT"`
@@ -66,6 +68,8 @@ func TestUnmarshal(t *testing.T) {
 		"EXTRA":     "extra",
 		"INT":       "1",
 		"BOOL":      "true",
+		"PEXPAND":   "$PATH:/home/test",
+		"PATH":      "/var/bin",
 	}
 
 	var validStruct ValidStruct
@@ -98,6 +102,10 @@ func TestUnmarshal(t *testing.T) {
 		t.Errorf("Expected field value to be '%t' but got '%t'", true, validStruct.Bool)
 	}
 
+	if validStruct.PExpand != "/var/bin:/home/test" {
+		t.Errorf("Expected field value to be '%s' but got '%s'", "/var/bin:/home/test", validStruct.PExpand)
+	}
+
 	v, ok := environ["HOME"]
 	if ok {
 		t.Errorf("Expected field '%s' to not exist but got '%s'", "HOME", v)
@@ -113,7 +121,7 @@ func TestUnmarshal(t *testing.T) {
 
 func TestUnmarshalPointer(t *testing.T) {
 	environ := map[string]string{
-		"POINTER_STRING":         "",
+		"POINTER_STRING2":        "",
 		"POINTER_INT":            "1",
 		"POINTER_POINTER_STRING": "",
 	}

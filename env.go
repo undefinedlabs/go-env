@@ -22,6 +22,7 @@ import (
 	"os"
 	"reflect"
 	"strconv"
+	"strings"
 )
 
 var (
@@ -75,8 +76,8 @@ func Unmarshal(es EnvSet, v interface{}) error {
 		}
 
 		typeField := t.Field(i)
-		tag := typeField.Tag.Get("env")
-		if tag == "" {
+		tagValues := getTagValues(typeField, "env")
+		if tagValues == nil || len(tagValues) == 0 {
 			continue
 		}
 
@@ -84,19 +85,35 @@ func Unmarshal(es EnvSet, v interface{}) error {
 			return ErrUnexportedField
 		}
 
-		envVar, ok := es[tag]
-		if !ok {
-			continue
-		}
+		for _, tag := range tagValues {
+			envVar, ok := es[tag]
+			if !ok {
+				continue
+			}
 
-		err := set(typeField.Type, valueField, envVar)
-		if err != nil {
-			return err
+			envVar = os.Expand(envVar, func(s string) string { return es[s] })
+			err := set(typeField.Type, valueField, envVar)
+			if err != nil {
+				return err
+			}
+			delete(es, tag)
+			break
 		}
-		delete(es, tag)
 	}
 
 	return nil
+}
+
+func getTagValues(field reflect.StructField, key string) []string {
+	tagValue := field.Tag.Get(key)
+	if tagValue == "" {
+		return nil
+	}
+	val := strings.Split(tagValue, ",")
+	for i := range val {
+		val[i] = strings.TrimSpace(val[i])
+	}
+	return val
 }
 
 func set(t reflect.Type, f reflect.Value, value string) error {
@@ -189,10 +206,11 @@ func Marshal(v interface{}) (EnvSet, error) {
 		}
 
 		typeField := t.Field(i)
-		tag := typeField.Tag.Get("env")
-		if tag == "" {
+		tagValues := getTagValues(typeField, "env")
+		if tagValues == nil || len(tagValues) == 0 {
 			continue
 		}
+		tag := tagValues[0]
 
 		if typeField.Type.Kind() == reflect.Ptr {
 			if valueField.IsNil() {
