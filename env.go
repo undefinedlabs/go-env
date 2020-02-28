@@ -289,11 +289,38 @@ func Marshal(v interface{}) (EnvSet, error) {
 		tag := tagValues[0]
 
 		if typeField.Type.Kind() == reflect.Ptr {
-			if valueField.IsNil() {
+			for {
+				if valueField.IsNil() {
+					break
+				}
+				valueField = valueField.Elem()
+				if valueField.Type().Kind() != reflect.Ptr {
+					break
+				}
+			}
+			if valueField.Type().Kind() == reflect.Ptr && valueField.IsNil() {
 				continue
 			}
-			es[tag] = fmt.Sprintf("%v", valueField.Elem().Interface())
-		} else {
+		}
+
+		switch valueField.Type().Kind() {
+		case reflect.Slice:
+			var strSlice []string
+			for i := 0; i < valueField.Len(); i++ {
+				item := valueField.Index(i)
+				strSlice = append(strSlice, fmt.Sprintf("%v", item.Interface()))
+			}
+			es[tag] = strings.Join(strSlice, ", ")
+		case reflect.Map:
+			var strSlice []string
+			iter := valueField.MapRange()
+			for iter.Next() {
+				k := iter.Key()
+				v := iter.Value()
+				strSlice = append(strSlice, fmt.Sprintf("%v=%v", k.Interface(), v.Interface()))
+			}
+			es[tag] = strings.Join(strSlice, ", ")
+		default:
 			es[tag] = fmt.Sprintf("%v", valueField.Interface())
 		}
 	}

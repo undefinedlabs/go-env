@@ -327,6 +327,19 @@ func TestMarshalPointer(t *testing.T) {
 	empty := ""
 	validStruct := ValidStruct{
 		PointerString: &empty,
+		SliceTest:     []string{"A", "B", "C"},
+		SliceNumber:   []int{1, 2, 3},
+		SliceBool:     []bool{true, false, true},
+		MapString: map[string]string{
+			"k1": "v1",
+			"k2": "v2",
+			"k3": "v3",
+		},
+		MapIFace: map[string]interface{}{
+			"k1": 1,
+			"k2": 2,
+			"k3": 3,
+		},
 	}
 	es, err := Marshal(&validStruct)
 	if err != nil {
