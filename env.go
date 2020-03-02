@@ -319,10 +319,9 @@ func Marshal(v interface{}) (EnvSet, error) {
 			es[tag] = strings.Join(strSlice, ", ")
 		case reflect.Map:
 			var strSlice []string
-			iter := valueField.MapRange()
-			for iter.Next() {
-				k := iter.Key()
-				v := iter.Value()
+			keys := valueField.MapKeys()
+			for _, k := range keys {
+				v := valueField.MapIndex(k)
 				strSlice = append(strSlice, fmt.Sprintf("%v=%v", k.Interface(), v.Interface()))
 			}
 			es[tag] = strings.Join(strSlice, ", ")
